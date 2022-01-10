@@ -1,11 +1,13 @@
 module GDC
 
+export Field, GDCString
+
 using HTTP
 using CSV
 using DataFrames
 
 struct Field
-    name::Symbol
+    name::String
 end
 
 struct Expression{T}
@@ -21,21 +23,17 @@ Base.:(|)( e1::Expression, e2::Expression ) = Expression{:(|)}( [e1, e2] )
 
 Base.in( f::Field, x ) = Expression{:in}( [f, x] )
 
-e = ( Field(:x) == 2 ) & ( Field(:y) == 3 ) & ( Field(:z) in [:a,:b,:c] )
-
 attributes = Dict( [
     :(==) => ["=","{","}"],
     :(&) => ["and","[","]"],
-    :in => ["in","[","]"],
+    :in => ["in","{","}"],
     :(|) => ["or","[","]"],
 ] )
-
-GDCString( x ) = join( GDCLines( x ), "\n" )
 
 function GDCLines( e::Expression{op} ) where {op}
     (opstring, start, stop) = attributes[op]
     prefix = [ "{",
-               "\t\"op\":\"$(transform[op])\"",
+               "\t\"op\":\"$opstring\",",
                "\t\"content\":$start" ]
                 
     body = GDCLines.( e.args )
@@ -51,7 +49,17 @@ GDCLines( v::Vector ) = [ "\"value\":["; "\t\"" .* [v[1:end-1] .* "\","; v[end] 
 
 GDCLines( x ) = ["\"value\":\"$x\""]
 
-#println(GDCString( (Field(:x) == 2) & (Field(:y) == 3) & (Field(:z) in ["a","b","c"]) ))
+function GDCString( e::Expression, fields::Vector{String}; format::String="csv", size=Inf )
+    lines = GDCLines( e )
+    string = "{\n\t\"filters\":" * join( lines, "\n\t" ) * ",\n"
+    string *= "\t\"format\":\"$format\",\n"
+    string *= "\t\"fields\":\"$(join(fields,","))\""
+    if size < Inf
+        string *= ",\n\t\"size\":\"$size\""
+    end
+    string *= "\n}"
+    return string
+end
 
 end
 
