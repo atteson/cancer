@@ -1,3 +1,5 @@
+module GDC
+
 using HTTP
 using CSV
 using DataFrames
@@ -49,6 +51,9 @@ GDCLines( v::Vector ) = [ "\"value\":["; "\t\"" .* [v[1:end-1] .* "\","; v[end] 
 
 GDCLines( x ) = ["\"value\":\"$x\""]
 
-println(GDCString( (Field(:x) == 2) & (Field(:y) == 3) & (Field(:z) in ["a","b","c"]) ))
+#println(GDCString( (Field(:x) == 2) & (Field(:y) == 3) & (Field(:z) in ["a","b","c"]) ))
+
+end
+
 
                            

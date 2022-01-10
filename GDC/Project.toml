@@ -1,0 +1,4 @@
+name = "GDC"
+uuid = "411a8ee3-f664-4f2e-8878-9cee2b5784ac"
+authors = ["BuildTools <unconfigured@null.spigotmc.org>"]
+version = "0.1.0"
