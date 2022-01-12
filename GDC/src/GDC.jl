@@ -1,10 +1,12 @@
 module GDC
 
-export Field, find_files
+export Field, find_files, get_files
 
 using HTTP
 using CSV
 using DataFrames
+using Tar
+using CodecZlib
 
 struct Field
     name::String
@@ -72,6 +74,27 @@ function find_files( filter::Expression; kwargs... )
     body = GDCString( filter, file_fields; kwargs... )
     response = HTTP.request( "POST", "https://api.gdc.cancer.gov/files", ["Content-Type" => "application/json"], body );
     return CSV.read( response.body, DataFrame );
+end
+
+function get_files( files::Vector{String} )
+    body = "{\n\t\"ids\":[\n\t\t\"" * join( files, "\",\n\t\t\"" ) * "\"\n\t]\n}"
+    response = HTTP.request( "POST", "https://api.gdc.cancer.gov/data", ["Content-Type" => "application/json"], body );
+
+    filename = match( r"attachment; filename=(.*)$", Dict(response.headers)["Content-Disposition"] ).captures[1]
+    
+    dir = tempname()
+    stream = GzipDecompressorStream( IOBuffer(response.body) )
+    if occursin( r"\.tar\.gz$", filename )
+        Tar.extract( stream, dir )
+    else
+        path = joinpath( dir, split( filename, "." )[1] )
+        mkpath( path )
+        fileroot = match( r"^(.*)\.gz$", filename ).captures[1]
+        write( joinpath( path, fileroot ), stream )
+    end
+    files = setdiff( readdir(dir), ["MANIFEST.txt"] )
+    cp.( joinpath.( dir, files ), joinpath.( homedir(), "data", "cancer", files ) )
+    rm( dir, recursive=true )
 end
 
 end
