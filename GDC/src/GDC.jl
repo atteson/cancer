@@ -49,16 +49,16 @@ GDCLines( v::Vector ) = [ "\"value\":["; "\t\"" .* [v[1:end-1] .* "\","; v[end] 
 
 GDCLines( x ) = ["\"value\":\"$x\""]
 
-function GDCString( e::Expression, fields::Vector{String}; format::String="csv", size=Inf )
+function GDCString( e::Expression, fields::Vector{String}; kwargs... )
     lines = GDCLines( e )
-    string = "{\n\t\"filters\":" * join( lines, "\n\t" ) * ",\n"
-    string *= "\t\"format\":\"$format\",\n"
-    string *= "\t\"fields\":\"$(join(fields,","))\""
-    if size < Inf
-        string *= ",\n\t\"size\":\"$size\""
-    end
-    string *= "\n}"
-    return string
+
+    # the value corresponding to filters is not a string so we do this one separately
+    s = "{\n\t\"filters\":" * join( lines, "\n\t" )*","
+    
+    kvs = (fields = join( fields, "," ), kwargs... )
+    s *= join(["\n\t\"$k\":\"$v\"" for (k,v) in pairs(kvs)], ",")
+    s *= "\n}"
+    return s
 end
 
 end
