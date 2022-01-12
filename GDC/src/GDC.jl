@@ -1,6 +1,6 @@
 module GDC
 
-export Field, GDCString
+export Field, find_files
 
 using HTTP
 using CSV
@@ -59,6 +59,19 @@ function GDCString( e::Expression, fields::Vector{String}; kwargs... )
     s *= join(["\n\t\"$k\":\"$v\"" for (k,v) in pairs(kvs)], ",")
     s *= "\n}"
     return s
+end
+
+file_fields = [
+    "file_id",
+    "file_name",
+    "data_type",
+    "data_format",
+]
+
+function find_files( filter::Expression; kwargs... )
+    body = GDCString( filter, file_fields; kwargs... )
+    response = HTTP.request( "POST", "https://api.gdc.cancer.gov/files", ["Content-Type" => "application/json"], body );
+    return CSV.read( response.body, DataFrame );
 end
 
 end
