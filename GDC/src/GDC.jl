@@ -1,12 +1,13 @@
 module GDC
 
-export Field, find_files, get_files
+export Field, find_files, get_files, endpoint
 
 using HTTP
 using CSV
 using DataFrames
 using Tar
 using CodecZlib
+using JSON
 
 struct Field
     name::String
@@ -63,6 +64,12 @@ function GDCString( e::Expression, fields::Vector{String}; kwargs... )
     return s
 end
 
+function endpoint( endpoint, filter; fields = String[], kwargs... )
+    body = GDCString( filter, fields; kwargs... )
+    response = HTTP.request( "POST", "https://api.gdc.cancer.gov/$endpoint", ["Content-Type" => "application/json"], body );
+    return JSON.parse( String(response.body) )
+end
+
 file_fields = [
     "file_id",
     "file_name",
@@ -70,8 +77,8 @@ file_fields = [
     "data_format",
 ]
 
-function find_files( filter::Expression; kwargs... )
-    body = GDCString( filter, file_fields; kwargs... )
+function find_files( filter::Expression; fields = file_fields, kwargs... )
+    body = GDCString( filter, fields; kwargs... )
     response = HTTP.request( "POST", "https://api.gdc.cancer.gov/files", ["Content-Type" => "application/json"], body );
     return CSV.read( response.body, DataFrame );
 end
