@@ -4,27 +4,19 @@ using DataFrames
 using Commas
 using Dates
 
-fillers = Dict(
-    String1 => String1(" "),
-    String31 => String31( "" ),
-    String => "",
-    Float64 => NaN,
-)
-
-function get_all( ; printevery = Second(1), start=1, stop=Inf, df = DataFrame() )
+function get_all( ; printevery = Second(1), start=1, stop=Inf, dfs = Dict{String,DataFrame}() )
     cancerdir = joinpath( homedir(), "data", "cancer" )
-
+    
     dirs = readdir( cancerdir );
 
     stop = Int(min(length(dirs),stop))
     
     t0 = now()
     println( "Starting at $t0" )
-    for i = start:stop-1
-
+    for i = start:stop
         fileid = dirs[i]
 
-        if !isempty(df) && fileid in df[!,:file_id]
+        if haskey( dfs, fileid )
             continue
         end
         
@@ -32,10 +24,81 @@ function get_all( ; printevery = Second(1), start=1, stop=Inf, df = DataFrame() 
         filenames = readdir(dir)
         @assert( length(filenames) == 1 )
         filename = joinpath( dir, filenames[1] )
-        data = CSV.read( filename, DataFrame, comment="#", delim="\t" );
-        
-        data[!,:file_id] = fill( fileid, size(data,1) )
+        dfs[fileid] = CSV.read( filename, DataFrame, comment="#", delim="\t" );
+        dfs[fileid][!,:file_id] = fill( fileid, size(dfs[fileid],1) )
 
+        t1 = now()
+        if t1 - t0 >= printevery
+            println( "Finished $i at $t1" )
+            t0 = t1
+        end
+    end
+    return dfs
+end
+
+function annotate!( dfs; printevery = Second(1) )
+    caseids = union(getindex.( values(dfs), !, :case_id )...);
+
+    increment = 100
+    start = 0
+
+    hitdicts = Dict{String,Dict{String,Any}}[]
+
+    t0 = now()
+    println( "Starting at $t0" )
+    while start < length(caseids)
+        range = start+1:min(start+increment,length(caseids))
+        newcases = endpoint( "cases", Field("case_id") in caseids[range], size = increment+1 )
+        hits = newcases["data"]["hits"];
+    
+        push!( hitdicts, Dict( [hit["case_id"] => hit for hit in hits] ) )
+        
+        start += increment
+        
+        t1 = now()
+        if t1 - t0 >= printevery
+            println( "Finished $start at $t1" )
+            t0 = t1
+        end
+    end
+    hitdict = merge(hitdicts...);
+    [df[!,:primary_site] = getindex.( getindex.( [hitdict], df[!,:case_id] ), "primary_site" ) for df in values(dfs)];
+    [df[!,:disease_type] = getindex.( getindex.( [hitdict], df[!,:case_id] ), "disease_type" ) for df in values(dfs)];
+    return hitdict
+end
+
+dfs = get_all();
+
+hitdict = annotate!( dfs );
+
+fillers = Dict(
+    String1 => String1(" "),
+    String31 => String31( "" ),
+    String => "",
+    Float64 => NaN,
+)
+
+unmissing( a::Vector{Union{Missing,T}}, miss::Vector{Bool} ) where {T} =
+    Vector{T}( ifelse.( miss, fillers[T], a ) )
+
+function combine( dfs )
+    ns = intersect(names.(values(dfs))...);
+    nsdfs = getindex.( values(dfs), !, [ns] );
+
+    df = DataFrame()
+    for i = 1:length(ns)
+        println( "Processing $(ns[i]) at $(now())" )
+        as = getindex.( nsdfs, !, ns[i] );
+        a = vcat( as... );
+        miss = ismissing.(a);
+        if sum(miss) > 0
+            @time a = unmissing(a, miss);
+        end
+        df[!,ns[i]] = a
+    end
+end
+
+function f()
         df2 = data
         if !isempty(df)
             fields = names(df)
@@ -61,12 +124,6 @@ function get_all( ; printevery = Second(1), start=1, stop=Inf, df = DataFrame() 
         end
 
         df = vcat( df, df2 )
-
-        t1 = now()
-        if t1 - t0 >= printevery
-            println( "Finished $i at $t1" )
-            t0 = t1
-        end
     end
     return df
 end
@@ -84,7 +141,7 @@ function get_cases( df )
             return df
         end
 
-        hits = cases["data"]["hits"]
+
         @assert( sort(getindex.( hits, "case_id" )) == sort(caseids) )
 
         hitdict = Dict( [hit["case_id"] => hit for hit in hits] )
