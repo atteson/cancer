@@ -1,6 +1,6 @@
 module GDC
 
-export Field, find_files, get_files, endpoint
+export Field, find_files, get_files, endpoint, cancerdir
 
 using HTTP
 using CSV
@@ -8,6 +8,8 @@ using DataFrames
 using Tar
 using CodecZlib
 using JSON
+
+const cancerdir = joinpath( homedir(), "data", "cancer" )
 
 struct Field
     name::String

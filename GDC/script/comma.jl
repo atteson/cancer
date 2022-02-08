@@ -5,8 +5,6 @@ using Commas
 using Dates
 using StringViews
 
-const cancerdir = joinpath( homedir(), "data", "cancer" )
-
 coltypes = Dict(
     "Chromosome" => String,
     "Start_Position" => Int,

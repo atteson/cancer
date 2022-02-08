@@ -1,8 +1,6 @@
 using GDC
 using Dates
 
-cancerdir = joinpath( homedir(), "data", "cancer" )
-
 filters = (Field("files.access") == "open") &
     (Field("files.data_category") == "simple nucleotide variation") &
     (Field("files.experimental_strategy") == "WXS")
@@ -21,7 +19,7 @@ while i <= n
             error( "$(result[i,:file_name]) doesn't match" )
         else
             filename = m.captures[1]
-            if !isfile( joinpath( cancerdir, result[i,:file_id], filename ) )
+            if !isfile( joinpath( cancerdir, "raw", result[i,:file_id], filename ) )
                 push!( files, result[i,:file_id] )
             end
         end
