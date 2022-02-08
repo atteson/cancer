@@ -5,19 +5,6 @@ using Commas
 using Dates
 using StringViews
 
-coltypes = Dict(
-    "Chromosome" => String,
-    "Start_Position" => Int,
-    "End_Position" => Int,
-    "References_Allele" => String,
-    "Tumor_Seq_Allele1" => String,
-    "Tumor_Seq_Allele2" => String,
-    "t_depth" => Int,
-    "t_ref_count" => Int,
-    "t_alt_count" => Int,
-    "case_id" => String,
-)
-
 const newline = UInt8('\n')
 const tab = UInt8('\t')
 const pound = UInt8('#')
@@ -98,8 +85,6 @@ function readmaf( filename )
     return (buffer, headers, locations)
 end
 
-@time (buffer,headers,locations) = readmaf( filename );
-
 coltypes = Dict(
     "Chromosome" => String,
     "Start_Position" => Int,
@@ -108,6 +93,18 @@ coltypes = Dict(
     "Tumor_Seq_Allele1" => String,
     "Tumor_Seq_Allele2" => String,
     "case_id" => String,
+    "Tumor_Sample_UUID" => String,
+    "Chromosome" => String,
+    "Start_Position" => Int,
+    "End_Position" => Int,
+    "References_Allele" => String,
+    "Tumor_Seq_Allele1" => String,
+    "Tumor_Seq_Allele2" => String,
+    "t_depth" => Int,
+    "t_ref_count" => Int,
+    "t_alt_count" => Int,
+    "Tumor_Sample_Barcode" => String,
+    "callers" => String,
 )
 
 function parseall( buffer, starts, stops, ::Type{String} )
@@ -137,8 +134,6 @@ function DataFrames.DataFrame( coltypes, buffer, headers, locations )
     return df
 end
 
-@time df = DataFrame( coltypes, buffer, headers, locations );
-
 function get_all( ; printevery = Second(1), dfs = Dict{String,DataFrame}() )
     rawdir = joinpath( cancerdir, "raw" )
     dirs = readdir( rawdir );
@@ -158,8 +153,18 @@ function get_all( ; printevery = Second(1), dfs = Dict{String,DataFrame}() )
         filename = joinpath( dir, filenames[1] )
 
         (buffer, headers, locations) = readmaf( filename )
-        dfs[fileid] = DataFrame( coltypes, buffer, headers, locations )
-        dfs[fileid][!,:file_id] = fill( fileid, size(dfs[fileid],1) )
+        dfs[fileid] = df = DataFrame( coltypes, buffer, headers, locations )
+        df[!,:file_id] = fill( fileid, size(dfs[fileid],1) )
+
+        m = match( r"^TCGA\.[^\.]*\.([^\.]*)\..", filenames[1] )
+        if m != nothing
+            caller = m.captures[1]
+            if "caller" in names(df)
+                @assert( df[!,:callers] .== caller )
+            else
+                df[!,:callers] = fill( caller, size(df,1) )
+            end
+        end
 
         t1 = now()
         if t1 - t0 >= printevery
@@ -212,7 +217,7 @@ unmissing( a::Vector{Union{Missing,T}}, miss::Vector{Bool} ) where {T} =
     Vector{T}( ifelse.( miss, fillers[T], a ) )
 
 function combine( dfs )
-    ns = intersect(names.(values(dfs))...);
+    ns = union(names.(values(dfs))...);
     nsdfs = getindex.( values(dfs), !, [ns] );
 
     df = DataFrame()
@@ -264,3 +269,4 @@ end
 @time write( joinpath( cancerdir, "snv" ), c )
 
 @time c2 = read( joinpath( cancerdir, "snv" ), Comma )
+
