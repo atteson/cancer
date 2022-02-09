@@ -66,58 +66,51 @@ function readmaf( filename )
             push!( headers, String(header) )
             header = UInt8[]
         elseif state == 5
-            locations[row,col] = i
             col += 1
+            locations[row,col] = i
         elseif state == 6
             if row == 0
                 push!( headers, String(header) )
-                locations = zeros( Int, newlines(buffer, i+1), length(headers) )
+                locations = zeros( Int, newlines(buffer, i+1), length(headers)+1 )
             else
-                locations[row,col] = i
+                locations[row,col+1] = i
             end
             row += 1
             col = 1
+            if row <= size(locations,1)
+                locations[row,col] = i
+            end
         end
     end
-    if state != 6
-        locations[row,col] = i
+    if row == size(locations,1)
+        locations[row,col+1] = i
+    else
+        @assert( row == size(locations,1)+1 )
     end
     return (buffer, headers, locations)
 end
 
 coltypes = Dict(
-    "Chromosome" => String,
     "Start_Position" => Int,
     "End_Position" => Int,
-    "References_Allele" => String,
-    "Tumor_Seq_Allele1" => String,
-    "Tumor_Seq_Allele2" => String,
-    "case_id" => String,
-    "Tumor_Sample_UUID" => String,
-    "Chromosome" => String,
     "Start_Position" => Int,
     "End_Position" => Int,
-    "References_Allele" => String,
-    "Tumor_Seq_Allele1" => String,
-    "Tumor_Seq_Allele2" => String,
     "t_depth" => Int,
     "t_ref_count" => Int,
     "t_alt_count" => Int,
-    "Tumor_Sample_Barcode" => String,
-    "callers" => String,
 )
 
 function parseall( buffer, starts, stops, ::Type{String} )
-    results = Vector{StringView}( undef, length(starts) )
-    for i = 1:length(starts)
-        results[i] = StringView( view( buffer, starts[i]+1:stops[i]-1 ) )
-    end
+    ranges = UnitRange.( starts .+ 1, stops .- 1 );
+    views = view.( [buffer], ranges );
+    results = StringView.( views );
     return results
 end
 
 function parseall( buffer, starts, stops, ::Type{T} ) where {T}
     results = Vector{T}( undef, length(starts) )
     for i = 1:length(starts)
+        range = starts[i] + 1:stops[i] - 1;
         results[i] = parse( T, StringView( view( buffer, starts[i]+1:stops[i]-1 ) ) )
     end
     return results
@@ -127,20 +120,23 @@ function DataFrames.DataFrame( coltypes, buffer, headers, locations )
     df = DataFrame()
     for i = 1:length(headers)
         header = headers[i]
-        if haskey( coltypes, header )
-            df[!,header] = parseall( buffer, view( locations, :, i-1 ), view( locations, :, i ), coltypes[header] )
-        end
+        coltype = get( coltypes, header, String )
+        starts = view( locations, :, i )
+        stops = view( locations, :, i+1 )
+        df[!,header] = parseall( buffer, starts, stops, coltype );
     end
     return df
 end
 
-function get_all( ; printevery = Second(1), dfs = Dict{String,DataFrame}() )
+function get_all( ; printevery = Second(1), dfs = Dict{String,DataFrame}(), maxdir = Inf )
+    t0 = now()
+    println( "Starting at $t0" )
+
     rawdir = joinpath( cancerdir, "raw" )
     dirs = readdir( rawdir );
 
-    t0 = now()
-    println( "Starting at $t0" )
-    for i = 1:length(dirs)
+    maxdir = Int(min( length(dirs), maxdir ))
+    for i = 1:maxdir
         fileid = dirs[i]
 
         if haskey( dfs, fileid )
@@ -153,7 +149,7 @@ function get_all( ; printevery = Second(1), dfs = Dict{String,DataFrame}() )
         filename = joinpath( dir, filenames[1] )
 
         (buffer, headers, locations) = readmaf( filename )
-        dfs[fileid] = df = DataFrame( coltypes, buffer, headers, locations )
+        dfs[fileid] = df = DataFrame( coltypes, buffer, headers, locations );
         df[!,:file_id] = fill( fileid, size(dfs[fileid],1) )
 
         m = match( r"^TCGA\.[^\.]*\.([^\.]*)\..", filenames[1] )
@@ -176,6 +172,9 @@ function get_all( ; printevery = Second(1), dfs = Dict{String,DataFrame}() )
 end
 
 function annotate!( dfs; printevery = Second(1) )
+    t0 = now()
+    println( "Starting at $t0" )
+    
     caseids = union(getindex.( values(dfs), !, :case_id )...);
 
     increment = 100
@@ -183,8 +182,6 @@ function annotate!( dfs; printevery = Second(1) )
 
     hitdicts = Dict{String,Dict{String,Any}}[]
 
-    t0 = now()
-    println( "Starting at $t0" )
     while start < length(caseids)
         range = start+1:min(start+increment,length(caseids))
         newcases = endpoint( "cases", Field("case_id") in caseids[range], size = increment+1 )
@@ -216,8 +213,8 @@ fillers = Dict(
 unmissing( a::Vector{Union{Missing,T}}, miss::Vector{Bool} ) where {T} =
     Vector{T}( ifelse.( miss, fillers[T], a ) )
 
-function combine( dfs )
-    ns = union(names.(values(dfs))...);
+function combine( dfs::Dict{String,DataFrame} )
+    ns = intersect(names.(values(dfs))...);
     nsdfs = getindex.( values(dfs), !, [ns] );
 
     df = DataFrame()
@@ -241,14 +238,16 @@ function tocharn( df )
         println( "Processing $n at $(now())" )
         if eltype(df[!,n]) <: AbstractString
             l = mapreduce( length, max, df[!,n] )
-            v = fill( UInt8(' '), N*l )
+            if l > 0
+                v = fill( UInt8(' '), N*l )
 
-            j = 1
-            for i = 1:N
-                copyto!( v, j, df[i,n] )
-                j += l
+                j = 1
+                for i = 1:N
+                    copyto!( v, j, df[i,n] )
+                    j += l
+                end
+                newdf[!,n] = reinterpret( CharN{l}, v )
             end
-            newdf[!,n] = reinterpret( CharN{l}, v )
         else
             newdf[!,n] = df[!,n]
         end
@@ -259,7 +258,7 @@ end
 @time dfs = get_all();
 
 @time hitdict = annotate!( dfs );
-
+                            
 @time df = combine( dfs );
 
 @time df1 = tocharn( df );
