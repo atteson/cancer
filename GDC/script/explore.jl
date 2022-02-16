@@ -125,3 +125,10 @@ for (case,site) in casesites
 end    
 
 [site => (quantile(counts,0.5),mean(counts),maximum(counts)) for (site, counts) in sitecounts]
+
+@time cases = sort( snv, :case_id );
+
+case = collect(groupby(cases))[3];
+genes = sort(case, :Start_Position, :Chromosome);
+vafs = [group[:t_alt_count]./(group[:t_alt_count] .+ group[:t_ref_count]) for group in Commas.groupby(genes)];
+p = histogram( mean.(vafs), label="", size=[1200,1000] )

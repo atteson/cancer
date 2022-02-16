@@ -1,6 +1,6 @@
 module GDC
 
-export Field, find_files, get_files, endpoint, cancerdir
+export Field, find_files, get_files, endpoint, cancerdir, get_tgz_files
 
 using HTTP
 using CSV
@@ -85,11 +85,17 @@ function find_files( filter::Expression; fields = file_fields, kwargs... )
     return CSV.read( response.body, DataFrame );
 end
 
-function get_files( files::Vector{String} )
+function request_files( files::Vector{String} )
     body = "{\n\t\"ids\":[\n\t\t\"" * join( files, "\",\n\t\t\"" ) * "\"\n\t]\n}"
     response = HTTP.request( "POST", "https://api.gdc.cancer.gov/data", ["Content-Type" => "application/json"], body );
 
     filename = match( r"attachment; filename=(.*)$", Dict(response.headers)["Content-Disposition"] ).captures[1]
+
+    return (response, filename)
+end
+   
+function get_tgz_files( files::Vector{String} )
+    (response, filename) = request_files( files )
     
     dir = tempname()
     stream = GzipDecompressorStream( IOBuffer(response.body) )
@@ -102,7 +108,7 @@ function get_files( files::Vector{String} )
         write( joinpath( path, fileroot ), stream )
     end
     files = setdiff( readdir(dir), ["MANIFEST.txt"] )
-    cp.( joinpath.( dir, files ), joinpath.( homedir(), "data", "cancer", files ) )
+    cp.( joinpath.( dir, files ), joinpath.( cancerdir, "raw", files ) )
     rm( dir, recursive=true )
 end
 
