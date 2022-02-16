@@ -231,7 +231,7 @@ function combine( dfs::Dict{String,DataFrame} )
     return df
 end
 
-function tocharn( df )
+function writecomma( df )
     newdf = DataFrame()
     N = size(df,1)
     for n in names(df)
@@ -261,6 +261,10 @@ end
                             
 @time df = combine( dfs );
 
+@time comma = Comma( joinpath( cancerdir, "snv_new" ), df );
+
+
+
 @time df1 = tocharn( df );
 
 @time c = Comma( df1 );
@@ -269,3 +273,4 @@ end
 
 @time c2 = read( joinpath( cancerdir, "snv" ), Comma )
 
+c = read( joinpath( cancerdir, "snv_new" ), Comma );
