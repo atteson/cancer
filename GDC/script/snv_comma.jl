@@ -132,7 +132,7 @@ function get_all( ; printevery = Second(1), dfs = Dict{String,DataFrame}(), maxd
     t0 = now()
     println( "Starting at $t0" )
 
-    rawdir = joinpath( cancerdir, "raw" )
+    rawdir = joinpath( cancerdir, "snv_raw" )
     dirs = readdir( rawdir );
 
     maxdir = Int(min( length(dirs), maxdir ))
@@ -148,8 +148,13 @@ function get_all( ; printevery = Second(1), dfs = Dict{String,DataFrame}(), maxd
         @assert( length(filenames) == 1 )
         filename = joinpath( dir, filenames[1] )
 
-        (buffer, headers, locations) = readmaf( filename )
+        (buffer, headers, locations) = readmaf( filename );
         dfs[fileid] = df = DataFrame( coltypes, buffer, headers, locations );
+
+# I don't remember why I wrote my own function: this is slightly faster but with twice the allocations:
+#        @time df = CSV.read( filename, DataFrame, delim='\t', comment="#", pool=false, stringtype=PosLenString,
+#                             types = coltypes );
+        
         df[!,:file_id] = fill( fileid, size(dfs[fileid],1) )
 
         m = match( r"^TCGA\.[^\.]*\.([^\.]*)\..", filenames[1] )

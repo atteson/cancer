@@ -19,7 +19,7 @@ while i <= n
             error( "$(result[i,:file_name]) doesn't match" )
         else
             filename = m.captures[1]
-            if !isfile( joinpath( cancerdir, "raw", result[i,:file_id], filename ) )
+            if !isfile( joinpath( cancerdir, "snv_raw", result[i,:file_id], filename ) )
                 push!( files, result[i,:file_id] )
             end
         end
@@ -28,4 +28,4 @@ while i <= n
     get_tgz_files( files )
 end
 
-@assert( length(setdiff( result[!,:file_id], readdir(joinpath(cancerdir,"raw")) )) == 0 )
+@assert( length(setdiff( result[!,:file_id], readdir(joinpath(cancerdir,"snv_raw")) )) == 0 )

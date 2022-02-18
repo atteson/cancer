@@ -8,6 +8,7 @@ using Plots
 using DataStructures
 
 @time snv = read( joinpath( cancerdir, "snv" ), Comma );
+@time cnv = read( joinpath( cancerdir, "cnv" ), Comma );
 
 casetype = eltype(snv[:case_id])
 casecounts = Dict{casetype, Int}()
@@ -128,7 +129,68 @@ end
 
 @time cases = sort( snv, :case_id );
 
-case = collect(groupby(cases))[3];
+@time cases = sort.(collect(groupby(cases)), :Start_Position, :Chromosome );
 genes = sort(case, :Start_Position, :Chromosome);
 vafs = [group[:t_alt_count]./(group[:t_alt_count] .+ group[:t_ref_count]) for group in Commas.groupby(genes)];
 p = histogram( mean.(vafs), label="", size=[1200,1000] )
+
+snv_cases = unique(snv[:case_id]);
+cnv_cases = unique(cnv[:case_id]);
+
+cases = snv_cases[in.(snv_cases,[cnv_cases])];
+length(cases)
+
+@time good = snv[in.(snv[:case_id],[Set(cases)])];
+
+scnv = sort( cnv, :case_id, :Chromosome, :Start )
+
+mean(cnv[:Copy_Number] .== cnv[:Major_Copy_Number])
+
+sgood = sort( good, :case_id, :Chromosome, :Start_Position )
+
+function find_indices( sgood, scnv )
+    i = 1
+    j = 1
+    indices = Int[]
+    sgoodstart = getindex.( [sgood], i, (:case_id,:Chromosome,:Start_Position) )
+    scnvstart = getindex.( [scnv], j, (:case_id,:Chromosome,:Start) )
+    scnvend = getindex.( [scnv], j, (:case_id,:Chromosome,:End) )
+    while i <= size(sgood,1) && j <= size(scnv,1)
+        if sgoodstart >= scnvstart
+            if sgoodstart <= scnvend
+                push!( indices, j )
+                i += 1
+                if i <= size(sgood,1)
+                    sgoodstart = getindex.( [sgood], i, (:case_id,:Chromosome,:Start_Position) )
+                end
+            else
+                j += 1
+                if j <= size(scnv,1)
+                    scnvstart = getindex.( [scnv], j, (:case_id,:Chromosome,:Start) )
+                    scnvend = getindex.( [scnv], j, (:case_id,:Chromosome,:End) )
+                end
+            end
+        else
+            push!( indices, 0 )
+            i += 1
+            if i <= size(sgood,1)
+                sgoodstart = getindex.( [sgood], i, (:case_id,:Chromosome,:Start_Position) )
+            end
+        end
+    end
+    while i < size(sgood,1)
+        push!( indices, 0 )
+        i += 1
+    end
+    return indices
+end
+
+indices = find_indices( sgood, scnv );
+
+copy_numbers = [i == 0 ? -1 : scnv[i,:Copy_Number] for i in indices];
+minor_copy_numbers = [i == 0 ? -1 : scnv[i,:Minor_Copy_Number] for i in indices];
+major_copy_numbers = [i == 0 ? -1 : scnv[i,:Major_Copy_Number] for i in indices];
+mean(copy_numbers.==2)
+mean(copy_numbers.==1)
+mean((minor_copy_numbers .<= major_copy_numbers) .& (major_copy_numbers .<= copy_numbers))
+mean((copy_numbers .== -1) .| (minor_copy_numbers .+ major_copy_numbers .== copy_numbers))
