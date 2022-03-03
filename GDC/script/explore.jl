@@ -194,3 +194,28 @@ mean(copy_numbers.==2)
 mean(copy_numbers.==1)
 mean((minor_copy_numbers .<= major_copy_numbers) .& (major_copy_numbers .<= copy_numbers))
 mean((copy_numbers .== -1) .| (minor_copy_numbers .+ major_copy_numbers .== copy_numbers))
+
+
+bad = (cnv[:Minor_Copy_Number] .!= 2) .& (cnv[:Major_Copy_Number] .!= 2)
+cnv[bad]
+sum(cnv[bad,:Chromosome] .== [convert(CharN{5},"chrX")])
+sum(cnv[bad,:Chromosome] .== [convert(CharN{5},"chrY")])
+
+
+size(sgood)
+
+goodindices = (indices.!=0);
+sum(goodindices)
+
+gscnv = scnv[indices[goodindices]]
+vgscnv = gscnv[.!in.(gscnv[:Chromosome], [convert.(CharN{5}, ["chrX","chrY"])])];
+
+countmap(vgscnv[:Minor_Copy_Number] )
+countmap(vgscnv[:Major_Copy_Number] )
+
+mean((vgscnv[:Minor_Copy_Number].==0) .& (vgscnv[:Major_Copy_Number].==1))
+mean((vgscnv[:Minor_Copy_Number].==1) .& (vgscnv[:Major_Copy_Number].==1))
+mean((vgscnv[:Minor_Copy_Number].==1) .& (vgscnv[:Major_Copy_Number].>1))
+
+
+

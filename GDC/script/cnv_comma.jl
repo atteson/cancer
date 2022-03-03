@@ -106,30 +106,6 @@ function combine( dfs::Dict{String,DataFrame} )
     return df
 end
 
-function writecomma( df )
-    newdf = DataFrame()
-    N = size(df,1)
-    for n in names(df)
-        println( "Processing $n at $(now())" )
-        if eltype(df[!,n]) <: AbstractString
-            l = mapreduce( length, max, df[!,n] )
-            if l > 0
-                v = fill( UInt8(' '), N*l )
-
-                j = 1
-                for i = 1:N
-                    copyto!( v, j, df[i,n] )
-                    j += l
-                end
-                newdf[!,n] = reinterpret( CharN{l}, v )
-            end
-        else
-            newdf[!,n] = df[!,n]
-        end
-    end
-    return newdf
-end
-
 @time dfs = get_all();
 
 @time aliquotdict = annotate!( dfs );
