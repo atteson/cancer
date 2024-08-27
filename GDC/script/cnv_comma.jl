@@ -10,6 +10,7 @@ function get_all( ; printevery = Second(1), dfs = Dict{String,DataFrame}(), maxd
     println( "Starting at $t0" )
 
     rawdir = joinpath( cancerdir, "cnv_raw" )
+    mkpath( rawdir )
     dirs = readdir( rawdir );
 
     maxdir = Int(min( length(dirs), maxdir ))

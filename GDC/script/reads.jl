@@ -1,15 +1,14 @@
 using GDC
 using Dates
+using Debugger
 
-# no WXS for CNV
 filters = (Field("files.access") == "open") &
-    (Field("files.data_category") == "copy number variation") &
+    (Field("files.data_category") == "sequencing reads") &
     (Field("files.experimental_strategy") == "WGS")
 
-result = find_files( filters, size=20_000, format="tsv" );
+result = find_files( filters, size=10_000, format="tsv" );
 
-dir = joinpath( cancerdir, "cnv_raw" )
-mkpath(dir)
+dir = joinpath( cancerdir, "raw" )
 
 i = 1
 increment = 10
@@ -30,7 +29,8 @@ while i <= n
         end
         i += 1
     end
-    get_tgz_files( files, dir=dir, debug=true )
+    sleep(10)
+    get_tgz_files( files, debug=true )
 end
 
 @assert( length(setdiff( result[!,:file_id], readdir(dir) )) == 0 )

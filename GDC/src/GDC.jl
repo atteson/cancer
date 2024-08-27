@@ -50,7 +50,8 @@ end
     
 GDCLines( field::Field ) = ["\"field\":\"$(field.name)\""]
 
-GDCLines( v::Vector ) = [ "\"value\":["; "\t\"" .* [v[1:end-1] .* "\","; v[end] * "\""]; "]" ]
+#GDCLines( v::Vector ) = [ "\"value\":["; "\t\"" .* [v[1:end-1] .* "\","; v[end] * "\""]; "]" ]
+GDCLines( v::Vector ) = [ "\"value\":\"" * string(v) * "\"" ]
 
 GDCLines( x ) = ["\"value\":\"$x\""]
 
@@ -85,31 +86,43 @@ function find_files( filter::Expression; fields = file_fields, kwargs... )
     return CSV.read( response.body, DataFrame );
 end
 
-function request_files( files::Vector{String} )
+function request_files( files::Vector{String}; debug=false )
+    url = "https://api.gdc.cancer.gov/data"
     body = "{\n\t\"ids\":[\n\t\t\"" * join( files, "\",\n\t\t\"" ) * "\"\n\t]\n}"
-    response = HTTP.request( "POST", "https://api.gdc.cancer.gov/data", ["Content-Type" => "application/json"], body );
+    debug && print( "Posting to $url with body:")
+    debug && print( body )
+    response = HTTP.request( "POST", url, ["Content-Type" => "application/json"], body );
 
     filename = match( r"attachment; filename=(.*)$", Dict(response.headers)["Content-Disposition"] ).captures[1]
 
     return (response, filename)
 end
    
-function get_tgz_files( files::Vector{String} )
-    (response, filename) = request_files( files )
-    
-    dir = tempname()
+function get_tgz_files( files::Vector{String}; debug=false, dir = joinpath( cancerdir, "raw" ) )
+    debug && println( "Requesting files" )
+    (response, filename) = request_files( files, debug=debug )
+    debug && println( "Done requesting files" )
+
+    debug && println( "Extracting files" )
+    tmpdir = tempname()
     stream = GzipDecompressorStream( IOBuffer(response.body) )
     if occursin( r"\.tar\.gz$", filename )
-        Tar.extract( stream, dir )
+        Tar.extract( stream, tmpdir )
     else
-        path = joinpath( dir, split( filename, "." )[1] )
+        path = joinpath( tmpdir, split( filename, "." )[1] )
         mkpath( path )
         fileroot = match( r"^(.*)\.gz$", filename ).captures[1]
         write( joinpath( path, fileroot ), stream )
     end
-    files = setdiff( readdir(dir), ["MANIFEST.txt"] )
-    cp.( joinpath.( dir, files ), joinpath.( cancerdir, "raw", files ) )
-    rm( dir, recursive=true )
+    debug && println( "Done extracting files" )
+    debug && println( "Copying files from temp" )
+    files = setdiff( readdir(tmpdir), ["MANIFEST.txt"] )
+    cp.( joinpath.( tmpdir, files ), joinpath.( dir, files ), force=true )
+    rm( tmpdir, recursive=true )
+    debug && println( "Done copying files from temp" )
+end
+
+function uncompress( filename::AbstractString )
 end
 
 end

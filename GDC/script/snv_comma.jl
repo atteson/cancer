@@ -4,6 +4,7 @@ using DataFrames
 using Commas
 using Dates
 using StringViews
+using GZip
 
 const newline = UInt8('\n')
 const tab = UInt8('\t')
@@ -57,7 +58,10 @@ function readmaf( filename )
 
     locations = Matrix{Int}( undef, (0, 0) )
 
-    buffer = read( filename )
+    file = GZip.open( filename )
+    buffer = read( file )
+    close( file )
+    
     for i = 1:length(buffer)
         state = transitions[state,buffer[i]]
         if state == 1
