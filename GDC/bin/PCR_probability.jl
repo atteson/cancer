@@ -1,4 +1,5 @@
 using Distributions
+using Dates
 
 function calculate( p, n )
     N = 2^n
@@ -24,9 +25,32 @@ function calculate( p, n )
         end
         currsize = nextsize
     end
-    return probs[n % 1 + 1,:]
+    return probs[n % 2 + 1,:]
 end
 
-@time p10 = calculate( 0.9, 10 );
-@time p12 = calculate( 0.9, 12 );
-@time p15 = calculate( 0.9, 15 );
+ps = Vector{Float64}[]
+for i = 1:16
+    println( "Running $i at $(now())" )
+    push!( ps, calculate( 0.9, i ) )
+end
+
+using Plots
+
+function plot_densities( ps, r )
+    p = plot( size=[1000,800] )
+    for i in r
+        pn = ps[i]
+        n = length(pn)
+        plot!(p, (1:n)./n, pn.*n, label=string(i))
+    end
+    display(p)
+end
+
+plot_densities( ps, 11:16 )
+
+
+
+
+
+
+
