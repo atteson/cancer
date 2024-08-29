@@ -1,5 +1,6 @@
 using Distributions
 using Dates
+using SparseArrays
 
 function calculate( p, n )
     N = 2^n
@@ -28,6 +29,32 @@ function calculate( p, n )
     return probs[n % 2 + 1,:]
 end
 
+function calculate2( p, n )
+    No2 = 2^(n-1)
+    M = spzeros(No2 << 1, No2)
+
+    bins = Binomial.( 1:No2, p )
+
+    for from = 1:No2
+        for to = from:from << 1
+            M[to, from] = pdf( bins[from], to - from )
+        end
+    end
+
+    return M
+    
+    ps = Vector{Float64}[]
+    p = ones(1)
+    currsize = 1
+    for i = 1:n
+        nextsize = currsize << 1
+        p = view( M, 1:nextsize, 1:currsize ) * p
+        push!( ps, p )
+    end
+    
+    return ps
+end
+
 ps = Vector{Float64}[]
 for i = 1:16
     println( "Running $i at $(now())" )
@@ -41,12 +68,15 @@ function plot_densities( ps, r )
     for i in r
         pn = ps[i]
         n = length(pn)
-        plot!(p, (1:n)./n, pn.*n, label=string(i))
+        dx = 0.9^i / n
+        plot!(p, (1:n).*dx, pn./dx, label=string(i))
     end
     display(p)
 end
 
 plot_densities( ps, 11:16 )
+
+M = calculate2( 0.9, 2 )
 
 
 
