@@ -63,18 +63,23 @@ end
 
 using Plots
 
-function plot_densities( ps, r )
-    p = plot( size=[1000,800] )
+function plot_densities( ps, r; factor=1.0, p = plot( size=[1000,800] ), xscale=1.0, yscale=1.0 )
     for i in r
         pn = ps[i]
         n = length(pn)
-        dx = 0.9^i / n
-        plot!(p, (1:n).*dx, pn./dx, label=string(i))
+        dx = 1/(factor ^ i  * n)
+        plot!(p, xscale.*(1:n).*dx, yscale.*pn./dx, label=string(i))
     end
     display(p)
+    return p
 end
 
 plot_densities( ps, 11:16 )
+plot_densities( ps, 11:16, factor=0.95 )
+plot_densities( ps, 11:16, factor=sqrt(0.9) )
+
+p = plot_densities( ps, 16:16 )
+p = plot_densities( ps, 16:16, xscale=0.5, p=p, yscale=0.25 )
 
 M = calculate2( 0.9, 2 )
 
