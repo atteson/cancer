@@ -5,6 +5,7 @@ using Commas
 using Dates
 using StringViews
 using GZip
+using SentinelArrays
 
 const newline = UInt8('\n')
 const tab = UInt8('\t')
@@ -152,12 +153,13 @@ function get_all( ; printevery = Second(1), dfs = Dict{String,DataFrame}(), maxd
         @assert( length(filenames) == 1 )
         filename = joinpath( dir, filenames[1] )
 
-        (buffer, headers, locations) = readmaf( filename );
-        dfs[fileid] = df = DataFrame( coltypes, buffer, headers, locations );
+# Due to a bug in readmaf, I'm switching back to the CSV reader
+#        (buffer, headers, locations) = readmaf( filename );
+#        dfs[fileid] = df = DataFrame( coltypes, buffer, headers, locations );
 
-# I don't remember why I wrote my own function: this is slightly faster but with twice the allocations:
-#        @time df = CSV.read( filename, DataFrame, delim='\t', comment="#", pool=false, stringtype=PosLenString,
-#                             types = coltypes );
+#        dfs[fileid] = df = CSV.read( filename, DataFrame, delim='\t', comment="#", pool=false, stringtype=PosLenString,
+#                                     types = coltypes );
+        dfs[fileid] = df = CSV.read( filename, DataFrame, delim='\t', comment="#", types = coltypes );
         
         df[!,:file_id] = fill( fileid, size(dfs[fileid],1) )
 
@@ -212,15 +214,17 @@ function annotate!( dfs; printevery = Second(1) )
     return hitdict
 end
 
-fillers = Dict(
+override_filler = Dict(
     String1 => String1(" "),
-    String31 => String31( "" ),
-    String => "",
     Float64 => NaN,
 )
 
-unmissing( a::Vector{Union{Missing,T}}, miss::Vector{Bool} ) where {T} =
-    Vector{T}( ifelse.( miss, fillers[T], a ) )
+filler( ::Type{T} ) where {T} = get( override_filler, T, T( " " ) )
+
+unmissing( ::MissingVector, miss::Union{Vector{Bool},BitVector} ) = fill( String1( " " ), length(miss) )
+
+unmissing( a::AbstractVector{Union{T, Missing}}, miss::Union{Vector{Bool},BitVector} ) where {T} =
+    Vector{T}( ifelse.( miss, filler( T ), a ) )
 
 function combine( dfs::Dict{String,DataFrame} )
     ns = intersect(names.(values(dfs))...);
@@ -240,13 +244,17 @@ function combine( dfs::Dict{String,DataFrame} )
     return df
 end
 
-@time dfs = get_all();
+@time dfs = get_all( maxdir = 1_000 );
+#@time dfs = get_all();
 
 @time hitdict = annotate!( dfs );
                             
 @time df = combine( dfs );
 
-@time comma = Comma( joinpath( cancerdir, "snv_new" ), df );
+dir = joinpath( cancerdir, "snv_new" )
+@time comma = Comma( dir, df );
+read( dir, Comma )
+
 
 
 

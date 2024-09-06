@@ -50,8 +50,9 @@ end
     
 GDCLines( field::Field ) = ["\"field\":\"$(field.name)\""]
 
-#GDCLines( v::Vector ) = [ "\"value\":["; "\t\"" .* [v[1:end-1] .* "\","; v[end] * "\""]; "]" ]
-GDCLines( v::Vector ) = [ "\"value\":\"" * string(v) * "\"" ]
+# quotes in quotes seems to screw up emacs syntax highlighting
+q = '"'
+GDCLines( v::Vector ) = [ "$(q)value$q:["; "\t$q" .* [v[1:end-1] .* "$q,"; v[end] * "$q"]; "]" ]
 
 GDCLines( x ) = ["\"value\":\"$x\""]
 
