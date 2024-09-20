@@ -2,6 +2,7 @@ using Plots
 using Distributions
 using Dates
 using SparseArrays
+using LinearAlgebra
 
 function calculate( p, n )
     N = 2^n
@@ -52,6 +53,7 @@ function calculate_partial_M( p, start, n, maxsize )
     i = start
     nz = 0
     factor = p/(1-p)
+
     while nz + i < maxsize && i <= No2
         base = i + Int(round(p*i))
         i2 = i << 1
@@ -59,8 +61,12 @@ function calculate_partial_M( p, start, n, maxsize )
         
         up = base+1:i2
         down = base-1:-1:i
-        M[up, i] = accumulate( *, factor .* (i2 .- up .+ 1)./(up .- i), init=M[base, i] )
-        M[down, i] = accumulate( *, (down .+ 1 .- i)./(i2 .- down)./factor, init=M[base, i] )
+        upfactor = factor .* (i2 .- up .+ 1)./(up .- i)
+        upresult = accumulate( *, upfactor, init=M[base, i] )
+        M[up, i] = upresult
+        downfactor = (down .+ 1 .- i)./(i2 .- down)./factor
+        downresult = accumulate( *, downfactor, init=M[base, i] )
+        M[down, i] = downresult
 
         nz += i2
         i += 1
@@ -68,9 +74,100 @@ function calculate_partial_M( p, start, n, maxsize )
     return M
 end
 
-@time M0 = calculate_M( 0.9, 14 );
-@time M1 = calculate_partial_M( 0.9, 1, 14, 2^30 );
+function calculate_P( p, n; vec=false )
+    No2 = 1 << (n-1)
+    N = No2 << 1
+    i = 1
+    factor = p/(1-p)
 
+    P = zeros( n+1, N )
+    P[1,1] = 1.0
+    
+    while i <= No2
+        m = zeros( i+1 )
+        base = i + Int(round(p*i))
+        i2 = i << 1
+
+        baseresult = pdf( Binomial( i, p ), base - i )
+
+        m[base - i + 1] = baseresult
+        
+        up = base+1:i2
+        down = base-1:-1:i
+        upfactor = factor .* (i2 .- up .+ 1)./(up .- i)
+        upresult = accumulate( *, upfactor, init=baseresult )
+
+        c = length(up)
+        if c > 0
+            m[up .- i .+ 1] = upresult
+        end
+        
+        downfactor = (down .+ 1 .- i)./(i2 .- down)./factor
+        downresult = accumulate( *, downfactor, init=baseresult )
+
+        m[down .- i .+ 1] = downresult
+
+        if !vec
+            for k = 1:n
+                for l = i:i2
+                    P[k+1,l] += P[k,i] * m[l-i+1]
+                end
+            end
+        else
+            r = i:i2
+            for k = 1:n
+                result = P[k+1,r] + P[k,i] * m[r .- i .+ 1]
+                P[k+1,r] = result
+            end
+        end
+
+        i += 1
+    end
+    return P
+end
+
+n = 14
+No2 = 1 << (n-1)
+N = No2 << 1
+P0 = zeros( n+1, N )
+P0[1,1] = 1
+@time M0 = calculate_M( 0.9, n );
+@time for k = 1:n
+    P0[k+1,:] = M0 * P0[k,1:No2]
+end
+@time P1 = calculate_P( 0.9, n );
+@time P1 = calculate_P( 0.9, n );
+@time P1 = calculate_P( 0.9, n, vec=true );
+@time P1 = calculate_P( 0.9, n, vec=true );
+maximum(abs.(P1 - P0))
+
+ts = []
+for n = 1:14
+    t0 = time()
+    calculate_P( 0.9, n );
+    t1 = time()
+    push!( ts, t1 - t0 )
+end
+plot(ts)
+ts[2:end]./ts[1:end-1]
+diff(log.(ts))
+ts[end]*4^(25-14)
+
+using Profile
+using ProfileView
+Profile.clear()
+@profile P1 = calculate_P( 0.9, n );
+ProfileView.view()
+
+
+@time M1 = calculate_partial_M( 0.9, 1, n );
+maximum(abs.(M0 - M1))
+
+using Profile
+using ProfileView
+Profile.clear()
+@profile M1 = calculate_partial_M( 0.9, 1, 11 );
+ProfileView.view()
 
 ps = Vector{Float64}[]
 for i = 1:16

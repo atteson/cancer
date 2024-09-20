@@ -103,13 +103,14 @@ function combine( dfs::Dict{String,DataFrame} )
     nsdfs = getindex.( values(dfs), !, [ns] );
 
     df = DataFrame()
-    for i = 1:length(ns)
-        println( "Processing $(ns[i]) at $(now())" )
-        as = getindex.( nsdfs, !, ns[i] );
-#        as = as[length.(as).!=0]
-#        as = promote(as...)
+    for name in ns
+        println( "Processing $name at $(now())" )
+        as = getindex.( nsdfs, !, name );
         a = vcat( as... );
-        df[!,ns[i]] = a
+        if name in variable_length_string_cols
+            a = VariableLengthStringVector( a )
+        end
+        df[!,name] = a
     end
     return df
 end
@@ -122,7 +123,7 @@ end
 
 dir = joinpath( cancerdir, "snv_new" )
 rm( dir, recursive=true )
-@time  Comma( dir, df, verbose=true );
+@time  Comma( dir, df );
 
 read( dir, Comma )
 
@@ -149,3 +150,6 @@ end
 
 @time s = reduce( *, s );
 @time s = reduce( *, reduce.( *, ss ) );
+
+nt = NamedTuple([Symbol(n) => c for (n,c) in collect(pairs(eachcol(df)))]);
+Comma(NamedTuple([Symbol(n) => c for (n,c) in collect(pairs(eachcol(df)))[3:3]]))
