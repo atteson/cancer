@@ -1,3 +1,4 @@
+using Plots
 using Distributions
 using Dates
 using SparseArrays
@@ -29,7 +30,7 @@ function calculate( p, n )
     return probs[n % 2 + 1,:]
 end
 
-function calculate2( p, n )
+function calculate_M( p, n )
     No2 = 2^(n-1)
     M = spzeros(No2 << 1, No2)
 
@@ -42,26 +43,40 @@ function calculate2( p, n )
     end
 
     return M
-    
-    ps = Vector{Float64}[]
-    p = ones(1)
-    currsize = 1
-    for i = 1:n
-        nextsize = currsize << 1
-        p = view( M, 1:nextsize, 1:currsize ) * p
-        push!( ps, p )
-    end
-    
-    return ps
 end
+
+function calculate_partial_M( p, start, n, maxsize )
+    No2 = 1 << (n-1)
+    N = No2 << 1
+    M = spzeros( N, No2 )
+    i = start
+    nz = 0
+    factor = p/(1-p)
+    while nz + i < maxsize && i <= No2
+        base = i + Int(round(p*i))
+        i2 = i << 1
+        M[base, i] = pdf( Binomial( i, p ), base - i )
+        
+        up = base+1:i2
+        down = base-1:-1:i
+        M[up, i] = accumulate( *, factor .* (i2 .- up .+ 1)./(up .- i), init=M[base, i] )
+        M[down, i] = accumulate( *, (down .+ 1 .- i)./(i2 .- down)./factor, init=M[base, i] )
+
+        nz += i2
+        i += 1
+    end
+    return M
+end
+
+@time M0 = calculate_M( 0.9, 14 );
+@time M1 = calculate_partial_M( 0.9, 1, 14, 2^30 );
+
 
 ps = Vector{Float64}[]
 for i = 1:16
     println( "Running $i at $(now())" )
     push!( ps, calculate( 0.9, i ) )
 end
-
-using Plots
 
 function plot_densities( ps, r; factor=1.0, p = plot( size=[1000,800] ), xs=1.0, ys=1.0, kwargs... )
     for i in r

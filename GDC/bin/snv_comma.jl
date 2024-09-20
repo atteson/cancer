@@ -6,94 +6,7 @@ using Dates
 using StringViews
 using GZip
 using SentinelArrays
-
-const newline = UInt8('\n')
-const tab = UInt8('\t')
-const pound = UInt8('#')
-
-reset( ::Type{Nothing} ) = nothing
-reset( ::Type{Int} ) = 0
-reset( ::Type{String} ) = UInt8[]
-
-function newlines( buffer, start )
-    n = 0
-    for i = start:length(buffer)
-        n += buffer[i] == newline
-    end
-    n += buffer[end] != newline
-    return n
-end
-
-function readmaf( filename )
-    numstates = 6
-
-    transitions = zeros( UInt8, numstates, 256 )
-    transitions[1,:] = fill( 1, 256 )
-    transitions[1,pound] = 2
-    transitions[1,tab] = 3
-    transitions[1,newline] = 6
-
-    transitions[2,:] = fill( 2, 256 )
-    transitions[2,newline] = 1
-
-    transitions[3,:] = fill( 1, 256 )
-
-    transitions[4,:] = fill( 4, 256 )
-    transitions[4,tab] = 5
-    transitions[4,newline] = 6
-
-    transitions[5,:] = fill( 4, 256 )
-    transitions[5,tab] = 5
-    transitions[5,newline] = 6
-    
-    transitions[6,:] = fill( 4, 256 )
-    transitions[6,tab] = 5
-    transitions[6,newline] = 6
-
-    row = 0
-    col = 1
-    headers = String[]
-    header = UInt8[]
-    
-    state = 1
-
-    locations = Matrix{Int}( undef, (0, 0) )
-
-    file = GZip.open( filename )
-    buffer = read( file )
-    close( file )
-    
-    for i = 1:length(buffer)
-        state = transitions[state,buffer[i]]
-        if state == 1
-            push!( header, buffer[i] )
-        elseif state == 3
-            push!( headers, String(header) )
-            header = UInt8[]
-        elseif state == 5
-            col += 1
-            locations[row,col] = i
-        elseif state == 6
-            if row == 0
-                push!( headers, String(header) )
-                locations = zeros( Int, newlines(buffer, i+1), length(headers)+1 )
-            else
-                locations[row,col+1] = i
-            end
-            row += 1
-            col = 1
-            if row <= size(locations,1)
-                locations[row,col] = i
-            end
-        end
-    end
-    if row == size(locations,1)
-        locations[row,col+1] = i
-    else
-        @assert( row == size(locations,1)+1 )
-    end
-    return (buffer, headers, locations)
-end
+using MissingTypes
 
 coltypes = Dict(
     "Start_Position" => Int,
@@ -103,35 +16,11 @@ coltypes = Dict(
     "t_depth" => Int,
     "t_ref_count" => Int,
     "t_alt_count" => Int,
+    "Tumor_Seq_Allele2" => String,
+    "Hugo_Symbol" => String,
 )
 
-function parseall( buffer, starts, stops, ::Type{String} )
-    ranges = UnitRange.( starts .+ 1, stops .- 1 );
-    views = view.( [buffer], ranges );
-    results = StringView.( views );
-    return results
-end
-
-function parseall( buffer, starts, stops, ::Type{T} ) where {T}
-    results = Vector{T}( undef, length(starts) )
-    for i = 1:length(starts)
-        range = starts[i] + 1:stops[i] - 1;
-        results[i] = parse( T, StringView( view( buffer, starts[i]+1:stops[i]-1 ) ) )
-    end
-    return results
-end
-
-function DataFrames.DataFrame( coltypes, buffer, headers, locations )
-    df = DataFrame()
-    for i = 1:length(headers)
-        header = headers[i]
-        coltype = get( coltypes, header, String )
-        starts = view( locations, :, i )
-        stops = view( locations, :, i+1 )
-        df[!,header] = parseall( buffer, starts, stops, coltype );
-    end
-    return df
-end
+variable_length_string_cols = ["all_effects"]
 
 function get_all( ; printevery = Second(1), dfs = Dict{String,DataFrame}(), maxdir = Inf )
     t0 = now()
@@ -153,13 +42,8 @@ function get_all( ; printevery = Second(1), dfs = Dict{String,DataFrame}(), maxd
         @assert( length(filenames) == 1 )
         filename = joinpath( dir, filenames[1] )
 
-# Due to a bug in readmaf, I'm switching back to the CSV reader
-#        (buffer, headers, locations) = readmaf( filename );
-#        dfs[fileid] = df = DataFrame( coltypes, buffer, headers, locations );
-
-#        dfs[fileid] = df = CSV.read( filename, DataFrame, delim='\t', comment="#", pool=false, stringtype=PosLenString,
-#                                     types = coltypes );
-        dfs[fileid] = df = CSV.read( filename, DataFrame, delim='\t', comment="#", types = coltypes );
+        dfs[fileid] = df = CSV.read( filename, DataFrame, pool=false, delim='\t', comment="#",
+                                     types = coltypes );
         
         df[!,:file_id] = fill( fileid, size(dfs[fileid],1) )
 
@@ -214,18 +98,6 @@ function annotate!( dfs; printevery = Second(1) )
     return hitdict
 end
 
-override_filler = Dict(
-    String1 => String1(" "),
-    Float64 => NaN,
-)
-
-filler( ::Type{T} ) where {T} = get( override_filler, T, T( " " ) )
-
-unmissing( ::MissingVector, miss::Union{Vector{Bool},BitVector} ) = fill( String1( " " ), length(miss) )
-
-unmissing( a::AbstractVector{Union{T, Missing}}, miss::Union{Vector{Bool},BitVector} ) where {T} =
-    Vector{T}( ifelse.( miss, filler( T ), a ) )
-
 function combine( dfs::Dict{String,DataFrame} )
     ns = intersect(names.(values(dfs))...);
     nsdfs = getindex.( values(dfs), !, [ns] );
@@ -234,36 +106,46 @@ function combine( dfs::Dict{String,DataFrame} )
     for i = 1:length(ns)
         println( "Processing $(ns[i]) at $(now())" )
         as = getindex.( nsdfs, !, ns[i] );
+#        as = as[length.(as).!=0]
+#        as = promote(as...)
         a = vcat( as... );
-        miss = ismissing.(a);
-        if sum(miss) > 0
-            @time a = unmissing(a, miss);
-        end
         df[!,ns[i]] = a
     end
     return df
 end
 
 @time dfs = get_all( maxdir = 1_000 );
-#@time dfs = get_all();
 
 @time hitdict = annotate!( dfs );
                             
 @time df = combine( dfs );
 
 dir = joinpath( cancerdir, "snv_new" )
-@time comma = Comma( dir, df );
+rm( dir, recursive=true )
+@time  Comma( dir, df, verbose=true );
+
 read( dir, Comma )
 
+@time ss = [string.(df[!,:all_effects]) for df in values(dfs)];
+@time s = vcat(ss...);
+@time n = sum(length.(s));
+@time v = Vector{UInt8}( undef, n );
 
+function c( vs::Vector{String}, vu::Vector{UInt8} )
+    i = 1
+    for j = 1:length(vs)
+        s = vs[j]
+        n = length(s)
+        k = 1
+        while k <= n
+            vu[i] = s[k]
+            i += 1
+            k += 1
+        end
+    end
+end
 
+@time c( s, v );
 
-@time df1 = tocharn( df );
-
-@time c = Comma( df1 );
-
-@time write( joinpath( cancerdir, "snv" ), c )
-
-@time c2 = read( joinpath( cancerdir, "snv" ), Comma )
-
-c = read( joinpath( cancerdir, "snv_new" ), Comma );
+@time s = reduce( *, s );
+@time s = reduce( *, reduce.( *, ss ) );
