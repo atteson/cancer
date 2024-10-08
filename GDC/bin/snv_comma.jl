@@ -9,31 +9,35 @@ using SentinelArrays
 using MissingTypes
 
 coltypes = Dict(
-    "Start_Position" => Int,
+    "Allele" => String,
     "End_Position" => Int,
+    "HGVSp" => String,
+    "Hugo_Symbol" => String,
+    "PUBMED" => String,
+    "PHENO" => String,
+    "Reference_Allele" => String,
+    "SOMATIC" => String,
     "Start_Position" => Int,
-    "End_Position" => Int,
+    "Tumor_Seq_Allele1" => String,
+    "Tumor_Seq_Allele2" => String,
+    "t_alt_count" => Int,
     "t_depth" => Int,
     "t_ref_count" => Int,
-    "t_alt_count" => Int,
-    "Tumor_Seq_Allele2" => String,
-    "Hugo_Symbol" => String,
 )
 
-variable_length_string_cols = ["all_effects"]
-
-function get_all( ; printevery = Second(1), dfs = Dict{String,DataFrame}(), maxdir = Inf )
+function get_all( fileids::Set{String}; printevery = Second(1), dfs = Dict{String,DataFrame}(), maxdir = Inf )
     t0 = now()
     println( "Starting at $t0" )
 
     rawdir = joinpath( cancerdir, "snv_raw" )
     dirs = readdir( rawdir );
 
-    maxdir = Int(min( length(dirs), maxdir ))
-    for i = 1:maxdir
+    i = 1
+    while length(dfs) < maxdir && i <= length(dirs)
         fileid = dirs[i]
 
-        if haskey( dfs, fileid )
+        if in( fileid, fileids )
+            i += 1
             continue
         end
         
@@ -62,6 +66,7 @@ function get_all( ; printevery = Second(1), dfs = Dict{String,DataFrame}(), maxd
             println( "Finished $i at $t1" )
             t0 = t1
         end
+        i += 1
     end
     return dfs
 end
@@ -107,49 +112,31 @@ function combine( dfs::Dict{String,DataFrame} )
         println( "Processing $name at $(now())" )
         as = getindex.( nsdfs, !, name );
         a = vcat( as... );
-        if name in variable_length_string_cols
-            a = VariableLengthStringVector( a )
-        end
         df[!,name] = a
     end
     return df
 end
 
-@time dfs = get_all( maxdir = 1_000 );
-
-@time hitdict = annotate!( dfs );
-                            
-@time df = combine( dfs );
-
 dir = joinpath( cancerdir, "snv_new" )
-rm( dir, recursive=true )
-@time  Comma( dir, df );
-
-read( dir, Comma )
-
-@time ss = [string.(df[!,:all_effects]) for df in values(dfs)];
-@time s = vcat(ss...);
-@time n = sum(length.(s));
-@time v = Vector{UInt8}( undef, n );
-
-function c( vs::Vector{String}, vu::Vector{UInt8} )
-    i = 1
-    for j = 1:length(vs)
-        s = vs[j]
-        n = length(s)
-        k = 1
-        while k <= n
-            vu[i] = s[k]
-            i += 1
-            k += 1
-        end
-    end
+if isdir(dir)
+    rm( dir, recursive=true )
 end
+fileids = Set{String}()
 
-@time c( s, v );
+n = 1000
+i = 1
+while n == 1000
+    println( "Processing dataframe $i at $(now())" )
+    @time dfs = get_all( fileids, maxdir = n );
+    n = length(dfs)
 
-@time s = reduce( *, s );
-@time s = reduce( *, reduce.( *, ss ) );
+    @time hitdict = annotate!( dfs );
+                            
+    @time df = combine( dfs );
 
-nt = NamedTuple([Symbol(n) => c for (n,c) in collect(pairs(eachcol(df)))]);
-Comma(NamedTuple([Symbol(n) => c for (n,c) in collect(pairs(eachcol(df)))[3:3]]))
+    @time comma = Comma( df );
+    @time write( dir, comma, append=true, verbose=true )
+
+    fileids = union( fileids, string.(unique(comma[:file_id])));
+    i += 1
+end
